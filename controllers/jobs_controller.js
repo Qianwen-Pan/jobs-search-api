@@ -1,5 +1,9 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+const fs = require('fs').promises;
+const path = require('path');
+
+const jobsFilePath = path.join(__dirname, 'jobs.json');
 
 const fetchAllJobs = async () => {
     let page = 1;
@@ -58,6 +62,27 @@ const sortJobsById = (jobs) => {
     return jobs.sort((a, b) => b.id - a.id);
 };
 
+const readJobsFromFile = async () => {
+    try {
+        const data = await fs.readFile(jobsFilePath, 'utf-8');
+        return JSON.parse(data);
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            return [];
+        } else {
+            throw error;
+        }
+    }
+};
+
+const writeJobsToFile = async (jobs) => {
+    try {
+        await fs.writeFile(jobsFilePath, JSON.stringify(jobs, null, 2));
+    } catch (error) {
+        console.error('Error writing jobs to file:', error.message);
+    }
+};
+
 const getJobs = async (req, res) => {
     try {
         const workLocation = req.query.location || '万锦';
@@ -70,17 +95,28 @@ const getJobs = async (req, res) => {
         }
 
         const sortedJobs = sortJobsById(filteredJobs);
-        console.log(sortedJobs.length);
 
-        // Fetch details for each job
+        // Read existing jobs from file
+        const existingJobs = await readJobsFromFile();
+
         const detailedJobs = [];
         for (const job of sortedJobs) {
-            const jobUrl = `https://www.51.ca/jobs/job-posts/${job.id}`;
-            const details = await fetchJobDetails(jobUrl);
-            if (details) {
-                detailedJobs.push({ ...job, ...details });
+            let jobDetails = existingJobs.find(j => j.id === job.id);
+            if (!jobDetails) {
+                const jobUrl = `https://www.51.ca/jobs/job-posts/${job.id}`;
+                jobDetails = await fetchJobDetails(jobUrl);
+                if (jobDetails) {
+                    jobDetails = { ...job, ...jobDetails };
+                    existingJobs.push(jobDetails);
+                }
+            }
+            if (jobDetails) {
+                detailedJobs.push(jobDetails);
             }
         }
+
+        // Write the updated jobs to the file
+        await writeJobsToFile(existingJobs);
 
         res.json(detailedJobs);
     } catch (error) {
