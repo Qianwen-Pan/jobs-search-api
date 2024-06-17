@@ -4,15 +4,16 @@ const fs = require('fs').promises;
 const path = require('path');
 
 const jobsFilePath = path.join(__dirname, 'jobs.json');
+const subCategories = [1, 2, 3, 4, 6];
 
-const fetchAllJobs = async () => {
+const fetchAllJobsForSubCategory = async (subCategory) => {
     let page = 1;
     const perPage = 50;
     let allJobs = [];
     let hasMoreJobs = true;
 
     while (hasMoreJobs) {
-        const url = `https://www.51.ca/jobs/api/sub-categories/2/job-posts?page=${page}&perPage=${perPage}`;
+        const url = `https://www.51.ca/jobs/api/sub-categories/${subCategory}/job-posts?page=${page}&perPage=${perPage}`;
         try {
             const response = await axios.get(url);
 
@@ -24,8 +25,19 @@ const fetchAllJobs = async () => {
             }
         } catch (error) {
             hasMoreJobs = false;
-            console.error(`Error fetching jobs from page ${page}:`, error.message);
+            console.error(`Error fetching jobs from page ${page} for sub-category ${subCategory}:`, error.message);
         }
+    }
+
+    return allJobs;
+};
+
+const fetchAllJobs = async () => {
+    let allJobs = [];
+
+    for (const subCategory of subCategories) {
+        const jobs = await fetchAllJobsForSubCategory(subCategory);
+        allJobs = allJobs.concat(jobs);
     }
 
     return allJobs;
@@ -95,14 +107,17 @@ const getJobs = async (req, res) => {
         }
 
         const sortedJobs = sortJobsById(filteredJobs);
+        console.log("all jobs:", sortedJobs.length);
 
         // Read existing jobs from file
         const existingJobs = await readJobsFromFile();
 
         const detailedJobs = [];
+        let newJobs = 0;
         for (const job of sortedJobs) {
             let jobDetails = existingJobs.find(j => j.id === job.id);
             if (!jobDetails) {
+                newJobs++;
                 const jobUrl = `https://www.51.ca/jobs/job-posts/${job.id}`;
                 jobDetails = await fetchJobDetails(jobUrl);
                 if (jobDetails) {
@@ -114,7 +129,7 @@ const getJobs = async (req, res) => {
                 detailedJobs.push(jobDetails);
             }
         }
-
+        console.log("new Jobs",newJobs);
         // Write the updated jobs to the file
         await writeJobsToFile(existingJobs);
 
